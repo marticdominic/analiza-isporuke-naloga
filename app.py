@@ -104,7 +104,7 @@ if uploaded_file is not None:
                 # Filtriranje važećih
                 df_valid = df_analysis.dropna(subset=['Odobrena isporuka']).copy()
                 
-            st.success( erfolgreich = f"Uspješno obrađeno {len(df_valid):,} naloga!")
+            st.success(f"Uspješno obrađeno {len(df_valid):,} naloga!")
             
             # Prikaz metrika u karticama
             col1, col2, col3 = st.columns(3)
