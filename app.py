@@ -26,30 +26,29 @@ uploaded_file = st.sidebar.file_uploader("Učitaj Excel datoteku (.xlsx)", type=
 
 def calculate_working_days_and_hours(start, end):
     if pd.isna(start) or pd.isna(end) or end < start:
-        return 0, 0, 0.0
+        return 0.0, 0.0, 0.0
     
     d_start = start.normalize()
     d_end = end.normalize()
     
     # Izračun radnih dana (Ponedjeljak - Petak)
-    bus_days = int(np.busday_count(d_start.strftime('%Y-%m-%d'), d_end.strftime('%Y-%m-%d')))
+    bus_days = float(np.busday_count(d_start.strftime('%Y-%m-%d'), d_end.strftime('%Y-%m-%d')))
     
     # Ukupno sati
     total_seconds = (end - start).total_seconds()
     total_hours = total_seconds / 3600.0
     
     if d_start == d_end:
-        hours = round(total_hours)
-        return 0, hours, round(total_hours, 2)
+        return 0.0, round(total_hours, 2), round(total_hours, 2)
         
-    return max(0, bus_days), round(total_hours), round(total_hours, 2)
+    return max(0.0, bus_days), round(total_hours, 2), round(total_hours, 2)
 
 def categorize_time(hours):
-    if hours <= 10:
+    if hours <= 10.0:
         return "1. Unutar 10 sati"
-    elif hours <= 24:
+    elif hours <= 24.0:
         return "2. U roku od 24 sata (10-24h)"
-    elif hours <= 48:
+    elif hours <= 48.0:
         return "3. Između 24 i 48 sati"
     else:
         return "4. Više od 48 sati"
@@ -99,17 +98,17 @@ if uploaded_file is not None:
                 df_analysis['Završni status (izvor)'] = status_used
                 df_analysis['Vrijeme završetka'] = end_timestamps
                 
-                # Izračun radnih dana i sati
+                # Izračun radnih dana i sati (na 2 decimale)
                 w_days, w_hours, tot_hours, time_cats = [], [], [], []
                 for idx, row in df_analysis.iterrows():
                     d, h, th = calculate_working_days_and_hours(row['Odobrena isporuka'], row['Vrijeme završetka'])
-                    w_days.append(d)
-                    w_hours.append(h)
-                    tot_hours.append(th)
+                    w_days.append(round(d, 2))
+                    w_hours.append(round(h, 2))
+                    tot_hours.append(round(th, 2))
                     time_cats.append(categorize_time(th))
                 
                 df_analysis['Radni dani'] = w_days
-                df_analysis['Sati (zaokruženi)'] = w_hours
+                df_analysis['Sati'] = w_hours
                 df_analysis['Ukupno sati (decimalno)'] = tot_hours
                 df_analysis['Vremenska kategorija'] = time_cats
                 
@@ -122,9 +121,9 @@ if uploaded_file is not None:
             col1, col2, col3 = st.columns(3)
             col1.metric("Ukupno obrađenih naloga", f"{len(df_valid):,}")
             col2.metric("Prosjek radnih dana", f"{df_valid['Radni dani'].mean():.2f}")
-            col3.metric("Medijan radnih dana", f"{df_valid['Radni dani'].median():.0f}")
+            col3.metric("Medijan radnih dana", f"{df_valid['Radni dani'].median():.2f}")
             
-            # Izračun postotaka za vremenske kategorije
+            # Izračun postotaka za vremenske kategorije (zaokruženo na 2 decimale)
             cat_counts = df_valid['Vremenska kategorija'].value_counts().sort_index()
             cat_percentages = (cat_counts / len(df_valid) * 100).round(2)
             
@@ -140,9 +139,9 @@ if uploaded_file is not None:
             st.subheader("📊 Sažetak po korištenim statusima završetka")
             summary_status = df_valid.groupby('Završni status (izvor)').agg(
                 Broj_naloga=('Broj naloga', 'count'),
-                Prosjek_radnih_dana=('Radni dani', 'mean'),
-                Medijan_radnih_dana=('Radni dani', 'median'),
-                Prosjek_sati=('Sati (zaokruženi)', 'mean')
+                Prosjek_radnih_dana=('Radni dani', lambda x: round(x.mean(), 2)),
+                Medijan_radnih_dana=('Radni dani', lambda x: round(x.median(), 2)),
+                Prosjek_sati=('Sati', lambda x: round(x.mean(), 2))
             ).reset_index()
             st.dataframe(summary_status, use_container_width=True)
             
@@ -151,16 +150,16 @@ if uploaded_file is not None:
                 st.subheader("🏢 Sažetak po skladištima")
                 summary_wh = df_valid.groupby('Skladište').agg(
                     Broj_naloga=('Broj naloga', 'count'),
-                    Prosjek_radnih_dana=('Radni dani', 'mean'),
-                    Prosjek_sati=('Sati (zaokruženi)', 'mean')
+                    Prosjek_radnih_dana=('Radni dani', lambda x: round(x.mean(), 2)),
+                    Prosjek_sati=('Sati', lambda x: round(x.mean(), 2))
                 ).reset_index()
                 st.dataframe(summary_wh, use_container_width=True)
             
             # Prikaz tablice sa svim podacima
             st.subheader("🔍 Detaljni pregled izračuna (uzorci)")
-            st.dataframe(df_valid[['Broj naloga', 'Skladište', 'Naziv partnera', 'Odobrena isporuka', 'Završni status (izvor)', 'Vrijeme završetka', 'Radni dani', 'Sati (zaokruženi)', 'Vremenska kategorija']].head(100), use_container_width=True)
+            st.dataframe(df_valid[['Broj naloga', 'Skladište', 'Naziv partnera', 'Odobrena isporuka', 'Završni status (izvor)', 'Vrijeme završetka', 'Radni dani', 'Sati', 'Vremenska kategorija']].head(100), use_container_width=True)
             
-            # Export u Excel gumb (s novom tablicom vremenskih intervala)
+            # Export u Excel gumb
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_valid.to_excel(writer, sheet_name='Analiza Naloga', index=False)
