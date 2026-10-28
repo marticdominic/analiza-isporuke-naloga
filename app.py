@@ -14,8 +14,8 @@ st.set_page_config(
 st.title("📦 Analiza vremena isporuke naloga")
 st.markdown("""
 Ova aplikacija automatski analizira uvozne Excel tablice statusa naloga. 
-Sustav automatski primjenjuje zadanu hijerarhiju za izračun radnih dana i sati (isključujući vikende):
-1. **Odobrena isporuka** ➡️ **Isporučeno MMG**
+Sustav uspoređuje **Odobrenu isporuku** s odabranim završnim statusom po hijerarhiji:
+1. **Isporučeno MMG**
 2. Ako nema *Isporučeno MMG* ➡️ **Otpremljeno**
 3. Ako nema niti to ➡️ **Spremno za otpremu**
 """)
@@ -43,6 +43,16 @@ def calculate_working_days_and_hours(start, end):
         return 0, hours, round(total_hours, 2)
         
     return max(0, bus_days), round(total_hours), round(total_hours, 2)
+
+def categorize_time(hours):
+    if hours <= 10:
+        return "1. Unutar 10 sati"
+    elif hours <= 24:
+        return "2. U roku od 24 sata (10-24h)"
+    elif hours <= 48:
+        return "3. Između 24 i 48 sati"
+    else:
+        return "4. Više od 48 sati"
 
 if uploaded_file is not None:
     try:
@@ -90,16 +100,18 @@ if uploaded_file is not None:
                 df_analysis['Vrijeme završetka'] = end_timestamps
                 
                 # Izračun radnih dana i sati
-                w_days, w_hours, tot_hours = [], [], []
+                w_days, w_hours, tot_hours, time_cats = [], [], [], []
                 for idx, row in df_analysis.iterrows():
                     d, h, th = calculate_working_days_and_hours(row['Odobrena isporuka'], row['Vrijeme završetka'])
                     w_days.append(d)
                     w_hours.append(h)
                     tot_hours.append(th)
+                    time_cats.append(categorize_time(th))
                 
                 df_analysis['Radni dani'] = w_days
                 df_analysis['Sati (zaokruženi)'] = w_hours
                 df_analysis['Ukupno sati (decimalno)'] = tot_hours
+                df_analysis['Vremenska kategorija'] = time_cats
                 
                 # Filtriranje važećih
                 df_valid = df_analysis.dropna(subset=['Odobrena isporuka']).copy()
@@ -111,6 +123,18 @@ if uploaded_file is not None:
             col1.metric("Ukupno obrađenih naloga", f"{len(df_valid):,}")
             col2.metric("Prosjek radnih dana", f"{df_valid['Radni dani'].mean():.2f}")
             col3.metric("Medijan radnih dana", f"{df_valid['Radni dani'].median():.0f}")
+            
+            # Izračun postotaka za vremenske kategorije
+            cat_counts = df_valid['Vremenska kategorija'].value_counts().sort_index()
+            cat_percentages = (cat_counts / len(df_valid) * 100).round(2)
+            
+            summary_time = pd.DataFrame({
+                'Broj naloga': cat_counts,
+                'Udio (%)': cat_percentages
+            }).reset_index().rename(columns={'index': 'Vremenski interval'})
+            
+            st.subheader("⏱️ Izvještaj po vremenskim intervalima isporuke")
+            st.dataframe(summary_time, use_container_width=True)
             
             # Pregled po statusima
             st.subheader("📊 Sažetak po korištenim statusima završetka")
@@ -134,12 +158,13 @@ if uploaded_file is not None:
             
             # Prikaz tablice sa svim podacima
             st.subheader("🔍 Detaljni pregled izračuna (uzorci)")
-            st.dataframe(df_valid[['Broj naloga', 'Skladište', 'Naziv partnera', 'Odobrena isporuka', 'Završni status (izvor)', 'Vrijeme završetka', 'Radni dani', 'Sati (zaokruženi)']].head(100), use_container_width=True)
+            st.dataframe(df_valid[['Broj naloga', 'Skladište', 'Naziv partnera', 'Odobrena isporuka', 'Završni status (izvor)', 'Vrijeme završetka', 'Radni dani', 'Sati (zaokruženi)', 'Vremenska kategorija']].head(100), use_container_width=True)
             
-            # Export u Excel gumb
+            # Export u Excel gumb (s novom tablicom vremenskih intervala)
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_valid.to_excel(writer, sheet_name='Analiza Naloga', index=False)
+                summary_time.to_excel(writer, sheet_name='Vremenski Interval', index=False)
                 summary_status.to_excel(writer, sheet_name='Pregled po Statusima', index=False)
                 if 'Skladište' in df_valid.columns:
                     summary_wh.to_excel(writer, sheet_name='Pregled po Skladištima', index=False)
