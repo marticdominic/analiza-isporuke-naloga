@@ -4,24 +4,39 @@ import numpy as np
 from datetime import datetime
 import io
 
-# Konfiguracija stranice
+# Konfiguracija stranice i vizualnog stila
 st.set_page_config(
-    page_title="Analiza radnih dana isporuke",
-    page_icon="📦",
+    page_title="Analiza vremena isporuke | BI Dashboard",
+    page_icon="📊",
     layout="wide"
 )
 
-st.title("📦 Analiza vremena isporuke naloga")
+# Custom CSS za poslovni izgled (moderni fontovi, kartice, čiste tablice)
 st.markdown("""
-Ova aplikacija automatski analizira uvozne Excel tablice statusa naloga. 
-Sustav uspoređuje **Odobrenu isporuku** s odabranim završnim statusom po hijerarhiji:
-1. **Isporučeno MMG**
-2. Ako nema *Isporučeno MMG* ➡️ **Otpremljeno**
-3. Ako nema niti to ➡️ **Spremno za otpremu**
+    <style>
+        .main {
+            background-color: #f8f9fa;
+        }
+        .metric-card {
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border-left: 5px solid #1f77b4;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("📊 BI Dashboard: Analiza vremena isporuke naloga")
+st.markdown("""
+Ovaj poslovni alat automatski obrađuje uvozne tablice statusa naloga, primjenjujući definiranu hijerarhiju i izračunavajući ključne pokazatelje učinkovitosti (KPI).
 """)
 
 # Bočna traka za upload fajla
-st.sidebar.header("📂 Učitavanje podataka")
+st.sidebar.header("📂 Upravljanje podacima")
 uploaded_file = st.sidebar.file_uploader("Učitaj Excel datoteku (.xlsx)", type=["xlsx"])
 
 def calculate_working_days_and_hours(start, end):
@@ -62,7 +77,7 @@ if uploaded_file is not None:
         if 'Odobrena isporuka' not in df.columns:
             st.error("Greška: U učitanoj tablici ne postoji stupac 'Odobrena isporuka'!")
         else:
-            with st.spinner("Obrada podataka u tijeku..."):
+            with st.spinner("Obrada i izračun podataka u tijeku..."):
                 df_analysis = df.copy()
                 
                 # Pretvorba u datume
@@ -117,13 +132,20 @@ if uploaded_file is not None:
                 
             st.success(f"Uspješno obrađeno {len(df_valid):,} naloga!")
             
-            # Prikaz metrika u karticama
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Ukupno obrađenih naloga", f"{len(df_valid):,}")
-            col2.metric("Prosjek radnih dana", f"{df_valid['Radni dani'].mean():.2f}")
-            col3.metric("Medijan radnih dana", f"{df_valid['Radni dani'].median():.2f}")
+            # --- KPI KARTICE ---
+            st.markdown("### 📌 Ključni pokazatelji (KPI)")
+            kpi1, kpi2, kpi3 = st.columns(3)
+            with kpi1:
+                st.metric("Ukupno obrađenih naloga", f"{len(df_valid):,}")
+            with kpi2:
+                st.metric("Prosjek radnih dana", f"{df_valid['Radni dani'].mean():.2f}")
+            with kpi3:
+                st.metric("Medijan radnih dana", f"{df_valid['Radni dani'].median():.2f}")
             
-            # Izračun postotaka za vremenske kategorije (zaokruženo na 2 decimale)
+            st.markdown("---")
+            
+            # --- VREMENSKI INTERVALI ---
+            st.subheader("⏱️ Izvještaj po vremenskim intervalima isporuke")
             cat_counts = df_valid['Vremenska kategorija'].value_counts().sort_index()
             cat_percentages = (cat_counts / len(df_valid) * 100).round(2)
             
@@ -132,34 +154,38 @@ if uploaded_file is not None:
                 'Udio (%)': cat_percentages
             }).reset_index().rename(columns={'index': 'Vremenski interval'})
             
-            st.subheader("⏱️ Izvještaj po vremenskim intervalima isporuke")
-            st.dataframe(summary_time, use_container_width=True)
+            st.dataframe(summary_time.style.format({'Broj naloga': '{:,}', 'Udio (%)': '{:.2f}%'}), use_container_width=True)
             
-            # Pregled po statusima
-            st.subheader("📊 Sažetak po korištenim statusima završetka")
-            summary_status = df_valid.groupby('Završni status (izvor)').agg(
-                Broj_naloga=('Broj naloga', 'count'),
-                Prosjek_radnih_dana=('Radni dani', lambda x: round(x.mean(), 2)),
-                Medijan_radnih_dana=('Radni dani', lambda x: round(x.median(), 2)),
-                Prosjek_sati=('Sati', lambda x: round(x.mean(), 2))
-            ).reset_index()
-            st.dataframe(summary_status, use_container_width=True)
+            # --- SAŽETAK PO STATUSIMA I SKLADIŠTIMA ---
+            col_a, col_b = st.columns(2)
             
-            # Pregled po skladištima ako stupac postoji
-            if 'Skladište' in df_valid.columns:
-                st.subheader("🏢 Sažetak po skladištima")
-                summary_wh = df_valid.groupby('Skladište').agg(
+            with col_a:
+                st.subheader("📊 Pregled po statusima završetka")
+                summary_status = df_valid.groupby('Završni status (izvor)').agg(
                     Broj_naloga=('Broj naloga', 'count'),
                     Prosjek_radnih_dana=('Radni dani', lambda x: round(x.mean(), 2)),
+                    Medijan_radnih_dana=('Radni dani', lambda x: round(x.median(), 2)),
                     Prosjek_sati=('Sati', lambda x: round(x.mean(), 2))
                 ).reset_index()
-                st.dataframe(summary_wh, use_container_width=True)
+                st.dataframe(summary_status.style.format({'Broj naloga': '{:,}', 'Prosjek_radnih_dana': '{:.2f}', 'Medijan_radnih_dana': '{:.2f}', 'Prosjek_sati': '{:.2f}'}), use_container_width=True)
+                
+            with col_b:
+                if 'Skladište' in df_valid.columns:
+                    st.subheader("🏢 Pregled po skladištima")
+                    summary_wh = df_valid.groupby('Skladište').agg(
+                        Broj_naloga=('Broj naloga', 'count'),
+                        Prosjek_radnih_dana=('Radni dani', lambda x: round(x.mean(), 2)),
+                        Prosjek_sati=('Sati', lambda x: round(x.mean(), 2))
+                    ).reset_index()
+                    st.dataframe(summary_wh.style.format({'Broj naloga': '{:,}', 'Skladište': '{:.0f}', 'Prosjek_radnih_dana': '{:.2f}', 'Prosjek_sati': '{:.2f}'}), use_container_width=True)
             
-            # Prikaz tablice sa svim podacima
-            st.subheader("🔍 Detaljni pregled izračuna (uzorci)")
+            st.markdown("---")
+            
+            # --- DETALJNA TABLICA ---
+            st.subheader("🔍 Detaljni pregled izračuna (uzorci naloga)")
             st.dataframe(df_valid[['Broj naloga', 'Skladište', 'Naziv partnera', 'Odobrena isporuka', 'Završni status (izvor)', 'Vrijeme završetka', 'Radni dani', 'Sati', 'Vremenska kategorija']].head(100), use_container_width=True)
             
-            # Export u Excel gumb
+            # --- EXPORT U EXCEL ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_valid.to_excel(writer, sheet_name='Analiza Naloga', index=False)
@@ -171,13 +197,13 @@ if uploaded_file is not None:
             
             st.sidebar.markdown("---")
             st.sidebar.download_button(
-                label="📥 Preuzmi obrađeni Excel",
+                label="📥 Preuzmi poslovni Excel izvještaj",
                 data=processed_data,
-                file_name="Analiza_vremena_isporuke_rezultat.xlsx",
+                file_name="Analiza_vremena_isporuke_biznis.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             
     except Exception as e:
         st.error(f"Došlo je do greške prilikom čitanja datoteke: {e}")
 else:
-    st.info("👈 Molimo učitajte Excel datoteku putem izbornika s lijeve strane kako biste pokrenuli analizu.")
+    st.info("👈 Molimo učitajte Excel datoteku putem bočnog izbornika s lijeve strane kako biste pokrenuli BI analizu.")
